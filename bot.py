@@ -117,7 +117,10 @@ class Bot:
         columns = forms[0].find_elements('xpath', './/table/thead/tr/th')
         for column in columns:
             try:
-                fields.append(column.find_element('xpath', './/a').text.strip())
+                head = column.find_element('xpath', './/a').text.strip()
+                fields.append(head)
+                if head == 'Payment types':
+                    fields.append('OUTLET')
             except:
                 pass
         fields.append('Customer link')
@@ -125,19 +128,25 @@ class Bot:
 
         data = []
         for form in forms:
+            outlet = form.find_element('xpath', './/h1').text.strip()
+
             # extract data
             rows = form.find_elements('xpath', './/table/tbody/tr')
             for row in rows:
                 cells = row.find_elements('xpath', './/td')
 
-                if len(fields) != len(cells):
+                if len(fields) < len(cells):
                     print(len(fields), len(cells))
                     return
 
-                datum = {}
+                datum = {'OUTLET': outlet}
                 i = 0
 
                 for cell in cells:
+                    # skip this field that doesn't exist in table columns
+                    if fields[i] == 'OUTLET':
+                        i += 1
+
                     try:
                         datum[fields[i]] = cell.find_element('xpath', './/div').text
                     except:
@@ -174,6 +183,12 @@ class Bot:
         # Create a pink fill
         pinkFill = PatternFill(start_color='F2CEEF', end_color='F2CEEF', fill_type='solid')
 
+        # Create a green fill
+        greenFill = PatternFill(start_color='DAF2D0', end_color='DAF2D0', fill_type='solid')
+
+        # Create a blue fill
+        blueFill = PatternFill(start_color='CAEDFB', end_color='CAEDFB', fill_type='solid')
+
         # set the height of the row 
         sheet.row_dimensions[1].height = 64
 
@@ -192,7 +207,10 @@ class Bot:
                 cell.value = field
             cell.alignment = Alignment(wrap_text=True)
             cell.font = bold_font
-            cell.fill = pinkFill
+            if field == 'OUTLET':
+                cell.fill = greenFill
+            else:
+                cell.fill = pinkFill
 
         fields.pop(0)
 
@@ -218,6 +236,8 @@ class Bot:
                 else:
                     cell.value = datum[field]
                     cell.font = small_font
+                    if field == 'OUTLET':
+                        cell.fill = blueFill
 
         data_dir = Path.joinpath(Path(__file__).resolve().parent, 'data')
         path = str(data_dir) + '/' + datetime.today().strftime('%Y/%m/%d')
