@@ -1,6 +1,7 @@
-from time import sleep
 import sys
+import time
 import threading
+import schedule
 # ui
 from ui.ui_main import Ui_MainWindow
 from ui.ui_settings import Ui_Dialog as Ui_Settings_Dialog
@@ -13,10 +14,25 @@ from PyQt5.QtGui import *
 from PyQt5.QtNetwork import *
 from PyQt5.QtPrintSupport import *
 # xlsx
-import xlsxwriter
+import openpyxl
 
 
 APP_NAME = "Data Scraping Bot"
+
+
+def run_continuously(interval=1):
+    cease_continuous_run = threading.Event()
+
+    class ScheduleThread(threading.Thread):
+        @classmethod
+        def run(cls):
+            while not cease_continuous_run.is_set():
+                schedule.run_pending()
+                time.sleep(interval)
+
+    continuous_thread = ScheduleThread()
+    continuous_thread.start()
+    return cease_continuous_run
 
 
 class SettingsDialog(QDialog, Ui_Settings_Dialog):
@@ -70,6 +86,16 @@ class SettingsDialog(QDialog, Ui_Settings_Dialog):
         if date_to:
             self.de_to.setDate(date_to)
 
+        # folder id
+        folder_id = settings.value("folder_id")
+        if folder_id:
+            self.le_folder_id.setText(folder_id)
+
+        # execution time
+        exec_time = settings.value("exec_time")
+        if exec_time:
+            self.te_exec_time.setTime(exec_time)
+
     def slot_save(self):
         # check login url
         login_url = self.le_login_url.text().strip()
@@ -106,6 +132,16 @@ class SettingsDialog(QDialog, Ui_Settings_Dialog):
         if not date_to:
             QMessageBox.warning(self, APP_NAME, "Please input date to.")
             return
+        # check folder id
+        folder_id = self.le_folder_id.text().strip()
+        if not folder_id:
+            QMessageBox.warning(self, APP_NAME, "Please input folder id.")
+            return
+        # check exec time
+        exec_time = self.te_exec_time.time()
+        if not exec_time:
+            QMessageBox.warning(self, APP_NAME, "Please input exec time.")
+            return
         # save to registry
         settings = QSettings(APP_NAME, "Bot")
         settings.setValue("login_url", login_url)
@@ -115,6 +151,8 @@ class SettingsDialog(QDialog, Ui_Settings_Dialog):
         settings.setValue("target_url", target_url)
         settings.setValue("date_from", date_from)
         settings.setValue("date_to", date_to)
+        settings.setValue("folder_id", folder_id)
+        settings.setValue("exec_time", exec_time)
 
         self.accept()
 
@@ -124,8 +162,7 @@ class MainUi(QMainWindow, Ui_MainWindow):
     # member variables
     settings_dialog = None
     bot = None
-    bot_thread = None
-    m_file = None
+    m_workbook = None
 
     def __init__(self, parent):
         # setup ui
@@ -137,7 +174,7 @@ class MainUi(QMainWindow, Ui_MainWindow):
 
         # create objects
         self.settings_dialog = SettingsDialog(self)
-        self.bot = Bot(10, '', '', '', '', '', '', '')
+        self.bot = Bot('', '', '', '', '', '', '', '')
         self.bot.log_signal = self.log_signal
 
         # init ui
@@ -158,39 +195,34 @@ class MainUi(QMainWindow, Ui_MainWindow):
             QMessageBox.warning(self, APP_NAME, "Bot settings are not valid. Please check.")
             return
 
-        self.m_file = open("members.txt", mode="a+", encoding="utf-8")
-        self.m_file.seek(0)
+        # Create a workbook and add a worksheet.
+        self.m_workbook = openpyxl.Workbook()
 
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
         self.setFixedHeight(400)
         self.btn_close.setEnabled(False)
 
-        # star thread
-        self.thread = threading.Thread(target=self.bot_thread_action)
-        self.thread.daemon = True
-        self.thread.start()
+        # schedule tasks
+        exec_time = self.settings_dialog.te_exec_time.time().toString('HH:mm')
+        schedule.every().day.at(exec_time).do(self.bot_thread_action)
+        # Start the background thread
+        self.stop_run_continuously = run_continuously()
+        self.bot.log("Scheduled a task at {0}".format(exec_time))
 
     def bot_thread_action(self):
-        self.bot.running = True
-        self.bot.extract(self.m_file)
+        self.bot.extract(self.m_workbook)
 
     def slot_log(self, msg):
         self.te_log.append(msg)
 
     def slot_stop(self):
-        if not self.bot.running:
-            QMessageBox.warning(self, APP_NAME, "Bot settings are not valid. Please check.")
-            return
-
-        self.m_file.close()
-
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
         self.setFixedHeight(160)
         self.btn_close.setEnabled(True)
 
-        self.bot.running = False
+        self.stop_run_continuously.set()
 
     def slot_close(self):
         self.close()
@@ -204,6 +236,7 @@ class MainUi(QMainWindow, Ui_MainWindow):
         self.bot.target_url = self.settings_dialog.le_target_url.text()
         self.bot.date_from = self.settings_dialog.de_from.date().toString('dd/MMM/yyyy')
         self.bot.date_to = self.settings_dialog.de_to.date().toString('dd/MMM/yyyy')
+        self.bot.folder_id = self.settings_dialog.le_folder_id.text()
 
     def slot_settings(self):
         if self.settings_dialog.exec_() == QDialog.Accepted:

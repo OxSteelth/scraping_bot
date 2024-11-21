@@ -9,3 +9,4 @@ ENV/
 env.bak/
 venv.bak/
 chromedriver.exe
+credentials.json
