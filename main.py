@@ -217,7 +217,6 @@ class MainUi(QMainWindow, Ui_MainWindow):
     def slot_stop(self):
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
-        self.setFixedHeight(160)
         self.btn_close.setEnabled(True)
 
         self.stop_run_continuously.set()
