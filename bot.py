@@ -11,7 +11,11 @@ import time
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-from upload import upload_file_to_gdrive
+from pydrive2.auth import GoogleAuth
+from pydrive2.drive import GoogleDrive
+from oauth2client.service_account import ServiceAccountCredentials
+import pkg_resources
+import platform
 
 
 start_time = time.time()
@@ -84,11 +88,46 @@ class Bot:
         self.driver.find_element('xpath', '//*[@id="cForm_row_reporter_reportForm_outlet"]/ul/li[1]').click()
         self.driver.find_element('xpath', '//*[@id="cForm_action_reporter_reportForm"]/button[1]').click()
 
+    def upload_file_to_gdrive(self, folder_id, path, file_name):
+        gauth = GoogleAuth()
+        # NOTE: if you are getting storage quota exceeded error, create a new service account, and give that service account permission to access the folder and replace the google_credentials.
+        gauth.credentials = ServiceAccountCredentials.from_json_keyfile_name(pkg_resources.resource_filename(__name__, "credentials.json"), scopes=['https://www.googleapis.com/auth/drive'])
+
+        drive = GoogleDrive(gauth)
+
+        file = drive.CreateFile({'parents': [{"id": folder_id}], 'title': file_name})
+
+        file.SetContentFile(path + '/' + file_name)
+        file.Upload()
+
     def extract(self, m_workbook: openpyxl.Workbook):
         """Extract data one by one"""
+        base_dir = Path(__file__).resolve().parent
         # Driver of the browser you use
-        self.driver = webdriver.Chrome("chromedriver.exe")
-        self.browse = self.driver.get(self.login_url)
+        try:
+            os_type = platform.system()
+            if os_type == 'Windows':
+                self.driver = webdriver.Chrome("chromedriver.exe")
+            elif os_type == 'Linux':
+                self.driver = webdriver.Chrome("{0}/chromedriver".format(base_dir))
+            elif os_type == 'Darwin':
+                chrome_options = webdriver.ChromeOptions()
+                chrome_options.add_argument("--remote-debugging-port=9222")
+                self.driver = webdriver.Chrome("{0}/chromedriver".format(base_dir), chrome_options=chrome_options)
+            else:
+                self.log("Not recognized OS type.")
+                return
+        except Exception as e:
+            self.log(str(e))
+            return
+
+        try:
+            self.browse = self.driver.get(self.login_url)
+        except Exception as e:
+            self.log(str(e))
+            self.driver.close()
+            return
+
         # start log
         self.log("Bot started ...")
         # Login to platform
@@ -133,15 +172,10 @@ class Bot:
             # extract data
             rows = form.find_elements('xpath', './/table/tbody/tr')
             for row in rows:
-                cells = row.find_elements('xpath', './/td')
-
-                if len(fields) < len(cells):
-                    print(len(fields), len(cells))
-                    return
-
                 datum = {'OUTLET': outlet}
                 i = 0
 
+                cells = row.find_elements('xpath', './/td')
                 for cell in cells:
                     # skip this field that doesn't exist in table columns
                     if fields[i] == 'OUTLET':
@@ -239,7 +273,7 @@ class Bot:
                     if field == 'OUTLET':
                         cell.fill = blueFill
 
-        data_dir = Path.joinpath(Path(__file__).resolve().parent, 'data')
+        data_dir = Path.joinpath(base_dir, 'data')
         path = str(data_dir) + '/' + datetime.today().strftime('%Y/%m/%d')
         if not os.path.exists(path):
             os.makedirs(path)
@@ -247,9 +281,9 @@ class Bot:
         m_workbook.save(path + '/' + file_name)
 
         try:
-            upload_file_to_gdrive(self.folder_id, path, file_name)
+            self.upload_file_to_gdrive(self.folder_id, path, file_name)
             self.log("Uploaded {0}".format(file_name))
-        except:
-            self.log("Failed while uploading a file.")
+        except Exception as e:
+            self.log(str(e))
 
         self.log("Finished.")

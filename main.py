@@ -178,7 +178,6 @@ class MainUi(QMainWindow, Ui_MainWindow):
         self.bot.log_signal = self.log_signal
 
         # init ui
-        self.setFixedHeight(160)
         self.btn_stop.setEnabled(False)
 
         # connect
@@ -200,7 +199,6 @@ class MainUi(QMainWindow, Ui_MainWindow):
 
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
-        self.setFixedHeight(400)
         self.btn_close.setEnabled(False)
 
         # schedule tasks
